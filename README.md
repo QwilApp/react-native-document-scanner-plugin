@@ -54,7 +54,7 @@ export default () => {
   const scanDocument = async () => {
     // start the document scanner
     const { scannedImages } = await DocumentScanner.scanDocument()
-  
+
     // get back an array with scanned image file paths
     if (scannedImages.length > 0) {
       // set the img src, so we can view the first scanned image
@@ -101,7 +101,7 @@ Here's what this example looks like with several items
 
 ### Limit Number of Scans
 
-You can limit the number of scans. For example if your app lets a user scan a business 
+You can limit the number of scans. For example if your app lets a user scan a business
 card you might want them to only capture the front and back. In this case you can set
 maxNumDocuments to 2. This only works on Android.
 
@@ -118,7 +118,7 @@ export default () => {
     const { scannedImages } = await DocumentScanner.scanDocument({
       maxNumDocuments: 2
     })
-  
+
     // get back an array with scanned image file paths
     if (scannedImages.length > 0) {
       // set the img src, so we can view the first scanned image
@@ -179,11 +179,12 @@ Opens the camera, and starts the document scan
 
 #### ScanDocumentOptions
 
-| Prop                    | Type                                                  | Description                                                                                                                                                                                                                                                                                                                               | Default                                   |
-| ----------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **`croppedImageQuality`**   | <code>number</code>                                   | The quality of the cropped image from 0 - 100. 100 is the best quality.                                                                                                                                                                                                                                                | <code>: 100</code>                         |
-| **`maxNumDocuments`**   | <code>number</code>                                   | Android only: The maximum number of photos an user can take (not counting photo retakes)                                                                                                                                                                                                                                                  | <code>: undefined</code>                         |
-| **`responseType`**      | <code><a href="#responsetype">ResponseType</a></code> | The response comes back in this format on success. It can be the document scan image file paths or base64 images.                                                                                                                                                                                                                         | <code>: ResponseType.ImageFilePath</code> |
+| Prop                      | Type                                                  | Description                                                                                                       | Default                                   |
+|---------------------------| ----------------------------------------------------- |-------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
+| **`croppedImageQuality`** | <code>number</code>                                   | The quality of the cropped image from 0 - 100. 100 is the best quality.                                           | <code>: 100</code>                        |
+| **`maxImageSize`**        | <code>number</code>                                   | Max image width or height, in pixels. If exceeded, image is resized.                                              | No max                                    |
+| **`maxNumDocuments`**     | <code>number</code>                                   | Android only: The maximum number of photos an user can take (not counting photo retakes)                          | <code>: undefined</code>                  |
+| **`responseType`**        | <code><a href="#responsetype">ResponseType</a></code> | The response comes back in this format on success. It can be the document scan image file paths or base64 images. | <code>: ResponseType.ImageFilePath</code> |
 
 
 ### Enums
@@ -268,7 +269,7 @@ export default () => {
 
     // start the document scanner
     const { scannedImages } = await DocumentScanner.scanDocument()
-  
+
     // get back an array with scanned image file paths
     if (scannedImages.length > 0) {
       // set the img src, so we can view the first scanned image

@@ -5,7 +5,7 @@ class DocumentScanner: NSObject {
     @objc static func requiresMainQueueSetup() -> Bool {
         return true
     }
-    
+
     /** @property  documentScanner the document scanner */
     private var documentScanner: DocScanner?
 
@@ -42,7 +42,8 @@ class DocumentScanner: NSObject {
                     self.documentScanner = nil
                 },
                 responseType: options["responseType"] as? String,
-                croppedImageQuality: options["croppedImageQuality"] as? Int
+                croppedImageQuality: options["croppedImageQuality"] as? Int,
+                maxImageSize: options["maxImageSize"] as? CGFloat
             )
         }
     }

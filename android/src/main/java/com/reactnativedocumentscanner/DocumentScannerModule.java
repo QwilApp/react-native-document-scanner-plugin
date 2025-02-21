@@ -1,5 +1,6 @@
 package com.reactnativedocumentscanner;
 
+import android.content.Context;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -26,16 +27,24 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanning;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.Page;
 import java.io.ByteArrayOutputStream;
+import java.io.BufferedOutputStream;
 import java.io.FileNotFoundException;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 @ReactModule(name = DocumentScannerModule.NAME)
 public class DocumentScannerModule extends ReactContextBaseJavaModule {
     public static final String NAME = "DocumentScanner";
+    private Context context;
 
     public DocumentScannerModule(ReactApplicationContext reactContext) {
         super(reactContext);
+        context = reactContext.getApplicationContext();
     }
 
     @Override
@@ -44,7 +53,84 @@ public class DocumentScannerModule extends ReactContextBaseJavaModule {
         return NAME;
     }
 
-    public String getImageInBase64(Activity currentActivity, Uri croppedImageUri, int quality) throws FileNotFoundException {
+    void compressImageToStream(Activity currentActivity, Uri imageUri, int compressionQuality, int maxImageSize, OutputStream stream) throws Exception {
+        // First, decode image size without loading the full image into memory
+        InputStream inStream = currentActivity.getContentResolver().openInputStream(imageUri);
+        BitmapFactory.Options inOptions = new BitmapFactory.Options();
+        inOptions.inJustDecodeBounds = true;
+        BitmapFactory.decodeStream(inStream, null, inOptions);
+        inStream.close();
+
+        int imageWidth = inOptions.outWidth;
+        int imageHeight = inOptions.outHeight;
+        boolean resizeRequired = false;
+
+        // Calculate required scaling
+        float scale = Math.min((float)imageWidth / maxImageSize, (float)imageHeight / maxImageSize);
+        int inSampleSize = 1;
+        if (maxImageSize > 0 && scale > 1) {
+            resizeRequired = true;
+            imageWidth = Math.round(imageWidth / scale);
+            imageHeight = Math.round(imageHeight / scale);
+            inSampleSize = calculateInSampleSize(inOptions, imageWidth, imageHeight);
+        }
+
+        // now we can load in the full image, subsampling so we only load as much as we need to output at requested scale
+        inStream = currentActivity.getContentResolver().openInputStream(imageUri);
+        BitmapFactory.Options samplingOptions = new BitmapFactory.Options();
+        samplingOptions.inSampleSize = inSampleSize;
+        Bitmap bitmap = BitmapFactory.decodeStream(inStream, null, samplingOptions);
+        inStream.close();
+
+        // next scale down the dimensions
+        if (resizeRequired) {
+            bitmap = Bitmap.createScaledBitmap(bitmap, imageWidth, imageHeight, true);
+        }
+
+        // and finally write it out to stream as compressed JPEG
+        bitmap.compress(Bitmap.CompressFormat.JPEG, compressionQuality, stream);
+        bitmap.recycle();
+    }
+
+    int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        // From https://developer.android.com/topic/performance/graphics/load-bitmap
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while ((halfHeight / inSampleSize) >= reqHeight
+                    && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return inSampleSize;
+    }
+
+    String compressImageToBase64(Activity currentActivity, Uri imageUri, int compressionQuality, int maxImageSize) throws Exception {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        compressImageToStream(currentActivity, imageUri, compressionQuality, maxImageSize, byteArrayOutputStream);
+        byte[] byteArray = byteArrayOutputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.DEFAULT);
+    }
+
+    File compressImageToFile(Activity currentActivity, Uri imageUri, int compressionQuality, int maxImageSize) throws Exception {
+        File outDir = this.context.getCacheDir();
+        File outFile = new File(outDir, UUID.randomUUID() + ".jpg");
+        OutputStream os = new BufferedOutputStream(new FileOutputStream(outFile));
+
+        compressImageToStream(currentActivity, imageUri, compressionQuality, maxImageSize, os);
+        os.close();
+        return outFile;
+    }
+
+    public String getImageInBase64(Activity currentActivity, Uri croppedImageUri, int quality, int maxImageSize) throws FileNotFoundException {
         Bitmap bitmap = BitmapFactory.decodeStream(
             currentActivity.getContentResolver().openInputStream(croppedImageUri)
         );
@@ -76,6 +162,13 @@ public class DocumentScannerModule extends ReactContextBaseJavaModule {
             croppedImageQuality = 100;
         }
 
+        int maxImageSize;
+        if (options.hasKey("maxImageSize")) {
+            maxImageSize = options.getInt("maxImageSize");
+        } else {
+            maxImageSize = 0;  // don't resize
+        }
+
         GmsDocumentScanner scanner = GmsDocumentScanning.getClient(documentScannerOptionsBuilder.build());
         ActivityResultLauncher<IntentSenderRequest> scannerLauncher = ((ComponentActivity) currentActivity).getActivityResultRegistry().register(
                 "document-scanner",
@@ -92,17 +185,18 @@ public class DocumentScannerModule extends ReactContextBaseJavaModule {
                             if (pages != null) {
                                 for (Page page : pages) {
                                     Uri croppedImageUri = page.getImageUri();
-                                    String croppedImageResults = croppedImageUri.toString();
-
-                                    if (options.hasKey("responseType") && Objects.equals(options.getString("responseType"), "base64")) {
-                                        try {
-                                            croppedImageResults = this.getImageInBase64(currentActivity, croppedImageUri, croppedImageQuality);
-                                        } catch (FileNotFoundException error) {
-                                            promise.reject("document scan error", error.getMessage());
-                                        }
+                                    try {
+                                       String croppedImageResults;
+                                       if (options.hasKey("responseType") && Objects.equals(options.getString("responseType"), "base64")) {
+                                          croppedImageResults = this.compressImageToBase64(currentActivity, croppedImageUri, croppedImageQuality, maxImageSize);
+                                       } else {
+                                          File compressedFile = this.compressImageToFile(currentActivity, croppedImageUri, croppedImageQuality, maxImageSize);
+                                          croppedImageResults = compressedFile.getPath();
+                                       }
+                                       docScanResults.pushString(croppedImageResults);
+                                    } catch (Exception error) {
+                                        promise.reject("document scan error", error.getMessage());
                                     }
-
-                                    docScanResults.pushString(croppedImageResults);
                                 }
                             }
                         }

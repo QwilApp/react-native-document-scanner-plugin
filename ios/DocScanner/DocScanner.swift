@@ -1,5 +1,7 @@
 import UIKit
 import VisionKit
+import AVFoundation
+
 
 /**
  This class uses VisonKit to start a document scan. It either returns the cropped images in base64 or as file paths
@@ -7,25 +9,28 @@ import VisionKit
  */
 @available(iOS 13.0, *)
 public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
-    
+
     /** @property  viewController the document scanner gets called from this view controller */
     private var viewController: UIViewController?
-    
+
     /** @property  successHandler a callback triggered when the user completes the document scan successfully */
     private var successHandler: ([String]) -> Void
-    
+
     /** @property  errorHandler a callback triggered when there's an error */
     private var errorHandler: (String) -> Void
-    
+
     /** @property  cancelHandler a callback triggered when the user cancels the document scan */
     private var cancelHandler: () -> Void
-    
+
     /** @property  responseType determines the format response (base64 or file paths) */
     private var responseType: String
 
     /** @property  croppedImageQuality the 0 - 100 quality of the cropped image */
     private var croppedImageQuality: Int
-    
+
+    /** @property  maxImageSize maximum image dimension */
+    private var maxImageSize: CGFloat
+
     /**
      constructor for DocScanner
 
@@ -35,7 +40,8 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
      @param     cancelHandler       a callback triggered when the user cancels the document scan
      @param     responseType        determines the format response (base64 or file paths)
      @param     croppedImageQuality the 0 - 100 quality of the cropped image
-     
+     @param     maxImageSize        maximum image dimension
+
      @return    Returns a DocScanner
      */
     public init(
@@ -44,7 +50,8 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
         errorHandler: @escaping (String) -> Void = {_ in },
         cancelHandler: @escaping () -> Void = {},
         responseType: String = ResponseType.imageFilePath,
-        croppedImageQuality: Int = 100
+        croppedImageQuality: Int = 100,
+        maxImageSize: Int = 0
     ) {
         self.viewController = viewController
         self.successHandler = successHandler
@@ -52,17 +59,18 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
         self.cancelHandler = cancelHandler
         self.responseType = responseType
         self.croppedImageQuality = croppedImageQuality
+        self.maxImageSize = CGFloat(maxImageSize)
     }
-    
+
     /**
      constructor for DocScanner
-     
+
      @return    Returns a DocScanner
      */
     public convenience override init() {
         self.init(nil)
     }
-    
+
     /**
      opens the camera, and starts the document scan
      */
@@ -72,7 +80,7 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
             self.errorHandler("Document scanning is not supported on this device")
             return
         }
-        
+
         DispatchQueue.main.async {
             // launch the document scanner
             let documentCameraViewController = VNDocumentCameraViewController()
@@ -80,7 +88,7 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
             self.viewController?.present(documentCameraViewController, animated: true)
         }
     }
-    
+
     /**
      opens the camera, and starts the document scan
 
@@ -90,6 +98,7 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
      @param     cancelHandler       a callback triggered when the user cancels the document scan
      @param     responseType        determines the format response (base64 or file paths)
      @param     croppedImageQuality the 0 - 100 quality of the cropped image
+     @param     maxImageSize        max image dimension
      */
     public func startScan(
         _ viewController: UIViewController? = nil,
@@ -97,7 +106,8 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
         errorHandler: @escaping (String) -> Void = {_ in },
         cancelHandler: @escaping () -> Void = {},
         responseType: String? = ResponseType.imageFilePath,
-        croppedImageQuality: Int? = 100
+        croppedImageQuality: Int? = 100,
+        maxImageSize: CGFloat? = 0
     ) {
         self.viewController = viewController
         self.successHandler = successHandler
@@ -105,14 +115,15 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
         self.cancelHandler = cancelHandler
         self.responseType = responseType ?? ResponseType.imageFilePath
         self.croppedImageQuality = croppedImageQuality ?? 100
-        
+        self.maxImageSize = maxImageSize ?? 0
+
         self.startScan()
     }
-    
+
     /**
      This gets called on document scan success. Either return an array with cropped images in base64 format, or save the cropped
      images and return an array with image file paths
-     
+
      @param controller  the ViewController that starts the document scan
      @param scan        contains details like number of pages scanned and UIImages for all scanned pages
      */
@@ -121,19 +132,20 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
         didFinishWith scan: VNDocumentCameraScan
     ) {
         var results: [String] = []
-        
+
         // loop through all scanned pages
         for pageNumber in 0...scan.pageCount - 1 {
-            
+
             // convert scan UIImage to jpeg data
             guard let scannedDocumentImage: Data = scan
                 .imageOfPage(at: pageNumber)
+                .scale(maxWidth: self.maxImageSize, maxHeight: self.maxImageSize)
                 .jpegData(compressionQuality: CGFloat(self.croppedImageQuality) / CGFloat(100)) else {
                 goBackToPreviousView(controller)
                 self.errorHandler("Unable to get scanned document in jpeg format")
                 return
             }
-            
+
             switch responseType {
                 case ResponseType.base64:
                     // convert scan jpeg data to base64
@@ -144,7 +156,7 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
                         // save scan jpeg
                         let croppedImageFilePath = FileUtil().createImageFile(pageNumber)
                         try scannedDocumentImage.write(to: croppedImageFilePath)
-                        
+
                         // store image file path
                         results.append(croppedImageFilePath.absoluteString)
                     } catch {
@@ -157,19 +169,19 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
                         "responseType must be \(ResponseType.base64) or \(ResponseType.imageFilePath)"
                     )
             }
-            
+
         }
-        
+
         // exit document scanner
         goBackToPreviousView(controller)
-        
+
         // return scanned document results
         self.successHandler(results)
     }
-    
+
     /**
      This gets called if the user cancels the document scan
-     
+
      @param controller  the ViewController that starts the document scan
      */
     public func documentCameraViewControllerDidCancel(
@@ -182,7 +194,7 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
 
     /**
      This gets called if there's an error during the document scan
-     
+
      @param controller      the ViewController that starts the document scan
      @param error           the error
      */
@@ -192,19 +204,43 @@ public class DocScanner: NSObject, VNDocumentCameraViewControllerDelegate {
     ) {
         // exit document scanner
         goBackToPreviousView(controller)
-        
+
         // return the error message
         self.errorHandler(error.localizedDescription)
     }
-    
+
     /**
      returns the user back to the ViewController that starts the document scan
-     
+
      @param controller      the ViewController that starts the document scan
      */
     private func goBackToPreviousView(_ controller: VNDocumentCameraViewController) {
         DispatchQueue.main.async {
             controller.dismiss(animated: true)
         }
+    }
+}
+
+extension UIImage {
+    func scale(maxWidth: CGFloat, maxHeight: CGFloat) -> UIImage {
+        let maxSize = CGSize(width: maxWidth, height: maxHeight)
+
+        let availableRect = AVFoundation.AVMakeRect(
+            aspectRatio: self.size,
+            insideRect: .init(origin: .zero, size: maxSize)
+        )
+        let targetSize = availableRect.size
+
+        // Set scale of renderer so that 1pt == 1px
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+
+        // Resize the image
+        let resized = renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+
+        return resized
     }
 }

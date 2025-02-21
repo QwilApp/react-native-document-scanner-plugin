@@ -36,6 +36,12 @@ export interface ScanDocumentOptions {
   croppedImageQuality?: number;
 
   /**
+   * Maximum width or height of the returned image. If scanned image exceeds the max, it is resized.
+   * @default: 0 (no max)
+   */
+  maxImageSize?: number;
+
+  /**
    * Android only: The maximum number of photos an user can take (not counting photo retakes)
    * @default: undefined
    */
